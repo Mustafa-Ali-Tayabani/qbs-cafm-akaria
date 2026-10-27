@@ -147,19 +147,6 @@ export function GovernanceAudit({store}:{store:Store}){
  return <Block title="Governance audit history" subtitle="ADM06 / NFR-04 Must · traceable local prototype changes"><div className="brd-toolbar"><label>Search ID or activity<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="e.g. WO-2841, SLA, approved"/></label></div><div className="workflow-table-wrap"><table className="workflow-table"><thead><tr><th>Source ID</th><th>Activity</th><th>Actor</th><th>Timestamp</th></tr></thead><tbody>{filtered.slice(0,100).map(l=><tr key={`${l.source}-${l.id}`}><td>{l.source}</td><td>{l.label}</td><td>{l.actor}</td><td>{prettyDate(l.at)}</td></tr>)}</tbody></table>{!filtered.length&&<div className="working-empty">No events match your search.</div>}</div>{hint("This ledger merges existing per-record demo timelines and rule versions. Browser storage is user-editable and is not a secure or immutable production audit trail.")}</Block>;
 }
 
-/** F01–F04 visual drilldown from actual room hierarchy. */
-export function SpaceHierarchy({store,site}:{store:Store;site:string}){
- const [selectedSite,setSelectedSite]=useState(site==="ALL"?store.data.sites[0]?.id??"":site),[building,setBuilding]=useState(""),[floor,setFloor]=useState("");
- const sites=store.data.sites.filter(s=>site==="ALL"||s.id===site);
- const siteId=sites.some(s=>s.id===selectedSite)?selectedSite:sites[0]?.id;
- const rooms=store.data.rooms.filter(r=>!r.archived&&r.siteId===siteId);
- const buildings=Array.from(new Set(rooms.map(r=>r.building)));
- const selectedBuilding=buildings.includes(building)?building:buildings[0];
- const floors=Array.from(new Set(rooms.filter(r=>r.building===selectedBuilding).map(r=>r.floor)));
- const selectedFloor=floors.includes(floor)?floor:floors[0];
- const visible=rooms.filter(r=>r.building===selectedBuilding&&r.floor===selectedFloor);
- return <Block title="Site → building → floor → room" subtitle="BR-SP-01 Must · navigable hierarchy derived from saved room records"><div className="brd-hierarchy-controls"><label>Site<select value={siteId} onChange={e=>{setSelectedSite(e.target.value);setBuilding("");setFloor("")}}>{sites.map(s=><option value={s.id} key={s.id}>{s.name}</option>)}</select></label><label>Building<select value={selectedBuilding??""} onChange={e=>{setBuilding(e.target.value);setFloor("")}}>{buildings.map(b=><option key={b}>{b}</option>)}</select></label><label>Floor<select value={selectedFloor??""} onChange={e=>setFloor(e.target.value)}>{floors.map(f=><option key={f}>{f}</option>)}</select></label></div><div className="workflow-table-wrap"><table className="workflow-table"><thead><tr><th>Room ID</th><th>Name</th><th>Department</th><th>Occupancy / capacity</th><th>Utilization</th></tr></thead><tbody>{visible.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.name}</td><td>{r.department}</td><td>{r.occupancy} / {r.capacity}</td><td>{r.capacity?`${Math.round(r.occupancy/r.capacity*100)}%`:"—"}</td></tr>)}</tbody></table>{!visible.length&&<div className="working-empty">No rooms registered here. Create them in the Rooms register.</div>}</div>{hint("Buildings/floors in this prototype are derived from room records. Independent building/floor CRUD, CAD/BIM geometry and physical area measurement remain incomplete.")}</Block>;
-}
 
 /** K04/K05 report extension, derived only from persisted WO, part and asset records. */
 function downloadTable(filename:string,headers:string[],rows:(string|number)[][]){

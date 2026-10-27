@@ -28,10 +28,73 @@ const ago = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOStr
 const ahead = (hours: number) => new Date(Date.now() + hours * 3_600_000).toISOString();
 const event = (id: string, label: string, actor: string, at: string): TimelineEvent => ({ id, label, actor, at });
 
+// [id, name, site, building, floor, department, occupancy, capacity, area m²]
+const roomSeed:[string,string,string,string,string,string,number,number,number][]=[
+  ["ROOM-OL-B1-PRK","Parking & Loading","SITE-OL","Tower A","Basement","Facilities",6,40,820],
+  ["ROOM-OL-B1-PLT","Chiller Plant","SITE-OL","Tower A","Basement","Facilities",2,4,260],
+  ["ROOM-OL-B1-STR","Central Store","SITE-OL","Tower A","Basement","Operations",1,3,140],
+  ["ROOM-OL-G-LOB","Main Lobby","SITE-OL","Tower A","Ground","Front of House",18,60,420],
+  ["ROOM-OL-G-REC","Reception","SITE-OL","Tower A","Ground","Front of House",3,4,60],
+  ["ROOM-OL-G-SEC","Security Control","SITE-OL","Tower A","Ground","Security",3,4,55],
+  ["ROOM-OL-G-CAF","Cafeteria","SITE-OL","Tower A","Ground","Hospitality",46,80,310],
+  ["ROOM-OL-1-OPN","Open Office East","SITE-OL","Tower A","Level 1","Finance",52,64,540],
+  ["ROOM-OL-1-MR1","Meeting Room Najd","SITE-OL","Tower A","Level 1","Shared",6,8,38],
+  ["ROOM-OL-1-MR2","Meeting Room Hijaz","SITE-OL","Tower A","Level 1","Shared",0,12,52],
+  ["ROOM-OL-1-PAN","Pantry L1","SITE-OL","Tower A","Level 1","Hospitality",4,10,30],
+  ["ROOM-OL-2-OPN","Open Office West","SITE-OL","Tower A","Level 2","Technology",38,60,500],
+  ["ROOM-OL-2-SRV","Server Room","SITE-OL","Tower A","Level 2","Technology",1,2,70],
+  ["ROOM-OL-2-TRN","Training Room","SITE-OL","Tower A","Level 2","HR",22,24,110],
+  ["ROOM-OL-2-FOC","Focus Pods","SITE-OL","Tower A","Level 2","Shared",3,8,45],
+  ["ROOM-OL-3-EXE","Executive Suite","SITE-OL","Tower A","Level 3","Executive",5,8,240],
+  ["ROOM-OL-3-BRD","Boardroom","SITE-OL","Tower A","Level 3","Executive",14,16,95],
+  ["ROOM-OL-3-LNG","Executive Lounge","SITE-OL","Tower A","Level 3","Executive",2,12,120],
+  ["ROOM-OL-R-LFT","Lift Motor Room","SITE-OL","Tower A","Roof","Facilities",0,2,65],
+  ["ROOM-OL-R-AHU","AHU Plant Deck","SITE-OL","Tower A","Roof","Facilities",1,4,180],
+  ["ROOM-NR-G-WRK","Maintenance Workshop","SITE-NR","Building A","Ground","Facilities",7,10,230],
+  ["ROOM-NR-G-STR","Spare Parts Store","SITE-NR","Building A","Ground","Operations",2,4,150],
+  ["ROOM-NR-G-ELC","Electrical Room","SITE-NR","Building A","Ground","Facilities",0,2,60],
+  ["ROOM-NR-1-OPS","Operations Centre","SITE-NR","Building A","Level 1","Operations",12,14,210],
+  ["ROOM-NR-1-MR1","Meeting Room Tuwaiq","SITE-NR","Building A","Level 1","Shared",8,10,42],
+  ["ROOM-NR-1-OFF","Supervisor Offices","SITE-NR","Building A","Level 1","Operations",4,6,90],
+  ["ROOM-NR-MECH","Mechanical Room","SITE-NR","Building A","Roof","Facilities",2,4,140],
+  ["ROOM-NR-R-WTR","Water Tank Deck","SITE-NR","Building A","Roof","Facilities",0,2,95],
+  ["ROOM-NR-B-WH","Warehouse Bay","SITE-NR","Building B","Ground","Logistics",9,20,680],
+  ["ROOM-NR-B-DCK","Loading Dock","SITE-NR","Building B","Ground","Logistics",4,8,210],
+  ["ROOM-NR-B-OFF","Logistics Office","SITE-NR","Building B","Level 1","Logistics",6,8,120],
+  ["ROOM-NR-B-BRK","Staff Break Room","SITE-NR","Building B","Level 1","Hospitality",3,16,80],
+  ["ROOM-JED-G-LOB","Lobby","SITE-JED","Jeddah HQ","Ground","Front of House",9,40,300],
+  ["ROOM-JED-G-CUS","Customer Service Hall","SITE-JED","Jeddah HQ","Ground","Customer Care",21,30,260],
+  ["ROOM-JED-G-PRY","Prayer Room","SITE-JED","Jeddah HQ","Ground","Shared",4,20,70],
+  ["ROOM-JED-1-OPN","Open Office","SITE-JED","Jeddah HQ","Level 1","Sales",33,48,430],
+  ["ROOM-JED-1-MR1","Meeting Room Red Sea","SITE-JED","Jeddah HQ","Level 1","Shared",10,10,48],
+  ["ROOM-JED-1-MR2","Meeting Room Corniche","SITE-JED","Jeddah HQ","Level 1","Shared",2,6,30],
+  ["ROOM-JED-L2","Service Corridor","SITE-JED","Jeddah HQ","Level 2","Operations",4,8,120],
+  ["ROOM-JED-2-IT","IT Hub","SITE-JED","Jeddah HQ","Level 2","Technology",11,16,180],
+  ["ROOM-JED-2-ARC","Records Archive","SITE-JED","Jeddah HQ","Level 2","Legal",1,4,140],
+  ["ROOM-DAM-G-REC","Reception","SITE-DAM","Main Block","Ground","Front of House",2,6,80],
+  ["ROOM-DAM-G-WRK","Field Team Base","SITE-DAM","Main Block","Ground","Operations",14,18,240],
+  ["ROOM-DAM-G-PLT","Plant Room","SITE-DAM","Main Block","Ground","Facilities",1,3,110],
+  ["ROOM-DAM-1-OPN","Regional Office","SITE-DAM","Main Block","Level 1","Operations",17,30,320],
+  ["ROOM-DAM-1-MR1","Meeting Room Gulf","SITE-DAM","Main Block","Level 1","Shared",0,8,36],
+  ["ROOM-DAM-1-MGR","Manager Office","SITE-DAM","Main Block","Level 1","Operations",1,2,28],
+];
+function bookingSeed():Booking[] {
+  const at=(day:number,hour:number)=>{const d=new Date();d.setDate(d.getDate()+day);d.setHours(hour,0,0,0);return d.toISOString()};
+  const rows:[string,string,number,number,number,string][]=[
+    ["ROOM-OL-1-MR1","Noura Al-Harbi",0,9,11,"Quarterly budget review"],["ROOM-OL-1-MR1","Fahad Al-Salem",0,13,14,"Contractor SLA check-in"],
+    ["ROOM-OL-1-MR2","Sara Al-Qahtani",0,10,12,"Vendor onboarding"],["ROOM-OL-3-BRD","Executive Office",0,8,10,"Board meeting"],
+    ["ROOM-OL-3-BRD","Executive Office",0,15,17,"Strategy workshop"],["ROOM-OL-2-TRN","HR Team",0,9,16,"Fire safety training"],
+    ["ROOM-NR-1-MR1","Faisal Al-Otaibi",0,11,12,"HVAC PPM planning"],["ROOM-JED-1-MR1","Sales Team",0,8,9,"Daily stand-up"],
+    ["ROOM-JED-1-MR1","Omar Bakr",0,14,16,"Client presentation"],["ROOM-JED-1-MR2","Lina Haddad",0,12,13,"Interview"],
+    ["ROOM-DAM-1-MR1","Regional Ops",1,10,12,"Weekly ops review"],["ROOM-OL-1-MR2","Finance Team",1,9,10,"Month-end close"],
+  ];
+  return rows.map(([roomId,person,day,from,to,purpose],i)=>({id:`BOOK-${String(i+1).padStart(6,"0")}`,roomId,person,startAt:at(day,from),endAt:at(day,to),purpose,status:"Confirmed",createdAt:ago(48)}));
+}
+
 export function createSeed(): DemoState {
   return {
     sequences: {},
-    applications: [], movements: [], bookings: [], transfers: [], purchaseRequests: [], notifications: [],
+    applications: [], movements: [], bookings: bookingSeed(), transfers: [], purchaseRequests: [], notifications: [],
     contracts: [
       {id:"CON-000014",title:"Elevator maintenance coverage",contractorId:"CTR-014",siteId:"SITE-OL",service:"Elevators",startAt:"2026-01-01",endAt:"2026-11-04",value:120000,penaltyPercent:1,tier:"Standard",status:"Active",legacyRef:"CN-2026-04"},
       {id:"CON-000018",title:"HVAC service coverage",contractorId:"CTR-019",siteId:"SITE-NR",service:"HVAC",startAt:"2026-01-01",endAt:"2027-05-01",value:210000,penaltyPercent:0.5,tier:"Priority",status:"Active",legacyRef:"CN-2027-02"},
@@ -92,15 +155,12 @@ export function createSeed(): DemoState {
       { id: "CTR-014", name: "Metro Lift Services", service: "Elevators", status: "Active", contractId: "CN-2026-04", expiresAt: ahead(24 * 14), contactName: "Sami Haddad", phone: "+966 11 555 0142", email: "ops@metrolift.sa", sites: ["SITE-OL"], slaTier: "Standard", timeline: [] },
       { id: "CTR-019", name: "Gulf HVAC Solutions", service: "HVAC", status: "Active", contractId: "CN-2027-02", expiresAt: ahead(24 * 190), contactName: "Faisal Al-Otaibi", phone: "+966 11 555 0190", email: "service@gulfhvac.sa", sites: ["SITE-NR","SITE-OL"], slaTier: "Priority", timeline: [] },
     ],
-    rooms: [
-      { id: "ROOM-NR-MECH", name: "Mechanical Room", siteId: "SITE-NR", building: "Building A", floor: "Roof", department: "Facilities", occupancy: 2, capacity: 4 },
-      { id: "ROOM-JED-L2", name: "Service Corridor", siteId: "SITE-JED", building: "Jeddah HQ", floor: "Level 2", department: "Operations", occupancy: 4, capacity: 8 },
-    ],
+    rooms: roomSeed.map(([id,name,siteId,building,floor,department,occupancy,capacity,areaSqm])=>({id,name,siteId,building,floor,department,occupancy,capacity,areaSqm})),
   };
 }
 
 
-const STORAGE_KEY = "akaria-cafm-demo-v6";
+const STORAGE_KEY = "akaria-cafm-demo-v7";
 export type Collection = "sites"|"assets"|"requests"|"workOrders"|"ppmPlans"|"parts"|"contractors"|"rooms"|"applications"|"bookings"|"transfers"|"contracts"|"purchaseRequests";
 export type RecordItem = Site|Asset|ServiceRequest|WorkOrder|PpmPlan|Part|Contractor|Room|Application|Booking|Transfer|Contract|PurchaseRequest;
 const prefixes:Record<Collection,string>={sites:"SITE",assets:"AST",requests:"SR",workOrders:"WO",ppmPlans:"PPM",parts:"PART",contractors:"CTR",rooms:"ROOM",applications:"APP",bookings:"BOOK",transfers:"TRF",contracts:"CON",purchaseRequests:"PR"};
