@@ -27,7 +27,7 @@ function layoutFloor(rooms:Room[]):PlanRect[]{
 }
 
 function useSpaceScope(store:Store,site:string){
- const sites=store.data.sites.filter(s=>site==="ALL"||s.id===site);
+ const sites=store.data.sites.filter(s=>!s.archived&&(site==="ALL"||s.id===site));
  const rooms=store.data.rooms.filter(r=>!r.archived&&(site==="ALL"||r.siteId===site));
  return {sites,rooms};
 }
@@ -42,14 +42,90 @@ function Usage({occupancy,capacity}:{occupancy:number;capacity:number}){
  return <div className="sv-usage"><span className="sv-usage-bar"><span style={{width:pct(Math.min(1,u))}}/></span><small>{occupancy} / {capacity} seats · {pct(u)}</small>{u>=0.85&&<em>Nearly full</em>}</div>;
 }
 
-/** F01–F04 portfolio → site → building → floor → room tree, drawn left to right; one branch open per level. */
+type Level="site"|"building"|"floor"|"room";
+type Path={site?:string;building?:string;floor?:string};
+type Editing={level:Level;mode:"add"|"edit";path:Path;room?:Room};
+const levelName:Record<Level,string>={site:"site",building:"building",floor:"floor",room:"room"};
+const floorSuggestions=["Basement","Ground","Mezzanine",...Array.from({length:10},(_,i)=>`Level ${i+1}`),"Roof"];
+
+/** Add / edit form for any level of the hierarchy. */
+function SpaceEditor({store,editing,onClose,onSaved}:{store:Store;editing:Editing;onClose:()=>void;onSaved:(p:Path)=>void}){
+ const {level,mode,path,room}=editing,site=store.data.sites.find(s=>s.id===path.site);
+ const [name,setName]=useState(mode==="edit"?(level==="site"?site?.name:level==="building"?path.building:level==="floor"?path.floor:room?.name)??"":"");
+ const [city,setCity]=useState(mode==="edit"?site?.city??"":"Riyadh");
+ const [department,setDepartment]=useState(room?.department??"Facilities");
+ const [areaSqm,setArea]=useState(String(room?.areaSqm??20)),[capacity,setCapacity]=useState(String(room?.capacity??4)),[occupancy,setOccupancy]=useState(String(room?.occupancy??0));
+ const [error,setError]=useState("");
+ const departments=uniq(store.data.rooms.map(r=>r.department)).sort();
+ const where=[site?.name,level!=="building"&&path.building,level==="room"&&path.floor].filter(Boolean).join(" › ");
+ function save(e:React.FormEvent){
+  e.preventDefault();setError("");
+  try{
+   const n=name.trim();if(!n)throw new Error("Enter a name.");
+   if(level==="site"){if(mode==="add"){const id=store.createRecord("sites",{name:n,city:city.trim()||"Riyadh",status:"Active"});return onSaved({site:id})}store.updateRecord("sites",path.site!,{name:n,city:city.trim()});return onSaved(path)}
+   if(level==="building"){if(mode==="add"){store.addSpace(path.site!,n);return onSaved({site:path.site,building:n})}store.renameSpace(path.site!,path.building!,undefined,n);return onSaved({...path,building:n})}
+   if(level==="floor"){if(mode==="add"){store.addSpace(path.site!,path.building!,n);return onSaved({...path,floor:n})}store.renameSpace(path.site!,path.building!,path.floor,n);return onSaved({...path,floor:n})}
+   const cap=Number(capacity),occ=Number(occupancy),area=Number(areaSqm);
+   if(!Number.isInteger(cap)||cap<1)throw new Error("Capacity must be a whole number of at least 1.");
+   if(!Number.isInteger(occ)||occ<0||occ>cap)throw new Error("Occupancy must be between 0 and the capacity.");
+   if(!(area>0))throw new Error("Area must be more than 0 m².");
+   const fields={name:n,department:department.trim()||"Facilities",areaSqm:area,capacity:cap,occupancy:occ};
+   if(mode==="add")store.createRecord("rooms",{...fields,siteId:path.site,building:path.building,floor:path.floor});else store.updateRecord("rooms",room!.id,fields);
+   onSaved(path);
+  }catch(err){setError(err instanceof Error?err.message:String(err))}
+ }
+ return <div className="modal-layer" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+  <form className="form-modal workflow-modal sv-editor" onSubmit={save} role="dialog" aria-modal="true" aria-label={`${mode==="add"?"Add":"Edit"} ${levelName[level]}`}>
+   <div className="workflow-modal-head"><div><strong>{mode==="add"?`Add ${levelName[level]}`:`Edit ${levelName[level]}`}</strong>{where&&<p>{mode==="add"?"Inside ":""}{where}</p>}</div><button type="button" className="secondary" onClick={onClose}>Close</button></div>
+   <div className="sv-editor-grid">
+    <label className="sv-wide">{level==="room"?"Room name":`${levelName[level][0].toUpperCase()}${levelName[level].slice(1)} name`}<input autoFocus value={name} onChange={e=>setName(e.target.value)} list={level==="floor"?"sv-floor-names":undefined} placeholder={level==="site"?"e.g. Khobar Branch":level==="building"?"e.g. Tower B":level==="floor"?"e.g. Level 4":"e.g. Meeting Room Asir"}/></label>
+    {level==="floor"&&<datalist id="sv-floor-names">{floorSuggestions.map(f=><option key={f} value={f}/>)}</datalist>}
+    {level==="site"&&<label className="sv-wide">City<input value={city} onChange={e=>setCity(e.target.value)}/></label>}
+    {level==="room"&&<>
+     <label className="sv-wide">Department<input value={department} onChange={e=>setDepartment(e.target.value)} list="sv-departments"/></label><datalist id="sv-departments">{departments.map(d=><option key={d} value={d}/>)}</datalist>
+     <label>Area (m²)<input type="number" min={1} value={areaSqm} onChange={e=>setArea(e.target.value)}/></label>
+     <label>Seats (capacity)<input type="number" min={1} value={capacity} onChange={e=>setCapacity(e.target.value)}/></label>
+     <label>People in it now<input type="number" min={0} value={occupancy} onChange={e=>setOccupancy(e.target.value)}/></label>
+    </>}
+    {mode==="edit"&&(level==="building"||level==="floor")&&<p className="workflow-caption sv-wide">Renaming updates every room inside this {levelName[level]}.</p>}
+   </div>
+   {error&&<p className="sv-editor-error" role="alert">{error}</p>}
+   <div className="form-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button type="submit" className="primary">{mode==="add"?`Add ${levelName[level]}`:"Save changes"}</button></div>
+  </form>
+ </div>;
+}
+
+/** Confirms archiving a site, building, floor or room and everything inside it. */
+function SpaceDelete({store,target,onClose,onDone}:{store:Store;target:{level:Level;path:Path;room?:Room};onClose:()=>void;onDone:()=>void}){
+ const {level,path,room}=target,[error,setError]=useState("");
+ const siteName=store.data.sites.find(s=>s.id===path.site)?.name??"";
+ const label=level==="site"?siteName:level==="building"?path.building:level==="floor"?`${path.floor} (${path.building})`:room?.name;
+ const inside=level==="room"?0:store.data.rooms.filter(r=>!r.archived&&r.siteId===path.site&&(level==="site"||r.building===path.building)&&(level!=="floor"||r.floor===path.floor)).length;
+ function confirm(){
+  const reason=level==="room"?store.archiveRecord("rooms",room!.id):store.archiveSpace(path.site!,level==="site"?undefined:path.building,level==="floor"?path.floor:undefined);
+  if(reason)setError(reason);else onDone();
+ }
+ return <div className="modal-layer"><section className="form-modal workflow-modal rv-confirm sv-editor" role="alertdialog" aria-modal="true" aria-label={`Delete ${label}`}>
+  <h3>Delete {levelName[level]} “{label}”?</h3>
+  <p>{inside?`This also removes ${plural(inside,"room")} inside it. `:""}Removed items are archived, so they stay in reports and audit history.</p>
+  {error&&<p className="sv-editor-error" role="alert">{error}</p>}
+  <div className="form-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button type="button" className="primary danger" onClick={confirm} disabled={Boolean(error)}>Delete</button></div>
+ </section></div>;
+}
+
+/** F01–F04 portfolio → site → building → floor → room tree, drawn left to right, with add / edit / delete at every level. */
 export function SpaceHierarchyView({store,site}:{store:Store;site:string}){
  const {sites,rooms}=useSpaceScope(store,site);
- const [open,setOpen]=useState<{site?:string;building?:string;floor?:string}>(()=>({site:sites[0]?.id}));
+ const [open,setOpen]=useState<Path>(()=>({site:sites[0]?.id}));
+ const [editing,setEditing]=useState<Editing>(),[deleting,setDeleting]=useState<{level:Level;path:Path;room?:Room}>();
  const host=useRef<HTMLDivElement>(null),[links,setLinks]=useState<string[]>([]);
+ const levels=store.data.spaceLevels;
  const siteRooms=rooms.filter(r=>r.siteId===open.site);
  const buildingRooms=siteRooms.filter(r=>r.building===open.building);
  const floorRooms=buildingRooms.filter(r=>r.floor===open.floor);
+ const buildingsOf=(siteId?:string)=>uniq([...rooms.filter(r=>r.siteId===siteId).map(r=>r.building),...levels.filter(l=>l.siteId===siteId).map(l=>l.building)]);
+ const floorsOf=(siteId?:string,b?:string)=>uniq([...rooms.filter(r=>r.siteId===siteId&&r.building===b).map(r=>r.floor),...levels.filter(l=>l.siteId===siteId&&l.building===b&&l.floor).map(l=>l.floor!)]).sort(byFloor);
+ const buildings=buildingsOf(open.site),floors=floorsOf(open.site,open.building);
  // Connector curves are measured from the rendered boxes: parent's right edge → each child's left edge.
  useLayoutEffect(()=>{
   const el=host.current;if(!el)return;
@@ -59,22 +135,33 @@ export function SpaceHierarchyView({store,site}:{store:Store;site:string}){
    return [`M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`];
   }))};
   draw();const observer=new ResizeObserver(draw);observer.observe(el);return ()=>observer.disconnect();
- },[open,rooms.length,sites.length]);
- const node=(id:string,parent:string|undefined,kind:string,icon:string,name:string,lines:string[],isOpen:boolean,onClick?:()=>void)=><button type="button" data-node={id} data-parent={parent} className={`sv-node sv-node-${kind.toLowerCase()}${isOpen?" open":""}`} onClick={onClick} aria-expanded={onClick?isOpen:undefined} disabled={!onClick}>
-  <span className="sv-node-kind"><span aria-hidden>{icon}</span> {kind}</span><strong>{name}</strong>{lines.map(l=><small key={l}>{l}</small>)}
-  {onClick&&<span className="sv-node-toggle">{isOpen?"Open ›":"Show ›"}</span>}</button>;
- const buildings=uniq(siteRooms.map(r=>r.building)),floors=uniq(buildingRooms.map(r=>r.floor)).sort(byFloor);
- const column=(title:string,children:React.ReactNode,hint?:string)=><div className="sv-col"><h4>{title}</h4>{children}{hint&&<p className="sv-col-hint">{hint}</p>}</div>;
- return <Section title="Space hierarchy" subtitle="Portfolio → site → building → floor → room. Click a box to show what's inside it.">
-  {!rooms.length?<div className="working-empty">No rooms registered. Create them in the Rooms register.</div>:<div className="sv-tree-scroll"><div className="sv-tree" ref={host}>
+ },[open,rooms.length,sites.length,levels.length,store.data.rooms]);
+ const actions=(level:Level,path:Path,room?:Room)=><span className="sv-node-actions">
+  <button type="button" onClick={()=>setEditing({level,mode:"edit",path,room})} aria-label={`Edit ${levelName[level]}`} title="Edit">✎ Edit</button>
+  <button type="button" className="sv-act-danger" onClick={()=>setDeleting({level,path,room})} aria-label={`Delete ${levelName[level]}`} title="Delete">🗑 Delete</button>
+ </span>;
+ const node=(id:string,parent:string|undefined,kind:string,icon:string,name:string,lines:string[],isOpen:boolean,onOpen?:()=>void,tools?:React.ReactNode,extra?:React.ReactNode)=><div data-node={id} data-parent={parent} className={`sv-node sv-node-${kind.toLowerCase()}${isOpen?" open":""}${onOpen?" clickable":""}`}>
+  {onOpen?<button type="button" className="sv-node-main" onClick={onOpen} aria-expanded={isOpen}><span className="sv-node-kind"><span aria-hidden>{icon}</span> {kind}</span><strong>{name}</strong>{lines.map(l=><small key={l}>{l}</small>)}<span className="sv-node-toggle">{isOpen?"Open ›":"Show ›"}</span></button>
+   :<div className="sv-node-main"><span className="sv-node-kind"><span aria-hidden>{icon}</span> {kind}</span><strong>{name}</strong>{lines.map(l=><small key={l}>{l}</small>)}</div>}
+  {extra}{tools}
+ </div>;
+ const column=(title:string,addLevel:Level|undefined,children:React.ReactNode,hint?:string)=><div className="sv-col">
+  <div className="sv-col-head"><h4>{title}</h4>{addLevel&&<button type="button" onClick={()=>setEditing({level:addLevel,mode:"add",path:open})}>+ Add {levelName[addLevel]}</button>}</div>
+  {children}{hint&&<p className="sv-col-hint">{hint}</p>}
+ </div>;
+ const empty=(n:number)=>n?[]:["Empty — add rooms"];
+ return <Section title="Space hierarchy" subtitle="Portfolio → site → building → floor → room. Click a box to open it. Use + Add, Edit and Delete to change the structure.">
+  <div className="sv-tree-scroll"><div className="sv-tree" ref={host}>
    <svg className="sv-tree-links" aria-hidden>{links.map(d=><path key={d} d={d}/>)}</svg>
-   {column("Portfolio",node("root",undefined,"Portfolio","🗂","All sites",[plural(sites.length,"site"),plural(rooms.length,"room")],true))}
-   {column("Sites",sites.map(s=>{const rs=rooms.filter(r=>r.siteId===s.id),isOpen=open.site===s.id;return <div key={s.id}>{node(`s:${s.id}`,"root","Site","📍",s.name,[s.city,plural(rs.length,"room")],isOpen,()=>setOpen({site:s.id}))}</div>}))}
-   {column("Buildings",buildings.map(b=>{const bs=siteRooms.filter(r=>r.building===b);return <div key={b}>{node(`b:${b}`,`s:${open.site}`,"Building","🏢",b,[plural(uniq(bs.map(r=>r.floor)).length,"floor"),`${sum(bs,"areaSqm").toLocaleString()} m²`],open.building===b,()=>setOpen({site:open.site,building:b}))}</div>}),!open.site?"Pick a site":undefined)}
-   {column("Floors",floors.map(f=>{const fs=buildingRooms.filter(r=>r.floor===f);return <div key={f}>{node(`f:${f}`,`b:${open.building}`,"Floor","▤",f,[plural(fs.length,"room"),seats(fs)],open.floor===f,()=>setOpen({...open,floor:f}))}</div>}),!open.building?"Pick a building":undefined)}
-   {column("Rooms",floorRooms.map(r=><div key={r.id} data-node={`r:${r.id}`} data-parent={`f:${open.floor}`} className="sv-node sv-node-room"><span className="sv-node-kind"><span aria-hidden>▢</span> Room</span><strong>{r.name}</strong><small>{r.department} · {r.areaSqm??"—"} m²</small><Usage occupancy={r.occupancy} capacity={r.capacity}/></div>),!open.floor?"Pick a floor":undefined)}
-  </div></div>}
+   {column("Portfolio",undefined,node("root",undefined,"Portfolio","🗂","All sites",[plural(sites.length,"site"),plural(rooms.length,"room")],true))}
+   {column("Sites",site==="ALL"?"site":undefined,sites.map(s=>{const rs=rooms.filter(r=>r.siteId===s.id),isOpen=open.site===s.id;return <div key={s.id}>{node(`s:${s.id}`,"root","Site","📍",s.name,[s.city,plural(rs.length,"room")],isOpen,()=>setOpen({site:s.id}),isOpen&&actions("site",open))}</div>}),sites.length?undefined:"No sites yet")}
+   {column("Buildings",open.site?"building":undefined,buildings.map(b=>{const bs=siteRooms.filter(r=>r.building===b),isOpen=open.building===b;return <div key={b}>{node(`b:${b}`,`s:${open.site}`,"Building","🏢",b,[plural(floorsOf(open.site,b).length,"floor"),...(bs.length?[`${sum(bs,"areaSqm").toLocaleString()} m²`]:empty(0))],isOpen,()=>setOpen({site:open.site,building:b}),isOpen&&actions("building",{site:open.site,building:b,floor:open.floor}))}</div>}),!open.site?"Pick a site":!buildings.length?"No buildings yet":undefined)}
+   {column("Floors",open.building?"floor":undefined,floors.map(f=>{const fs=buildingRooms.filter(r=>r.floor===f),isOpen=open.floor===f;return <div key={f}>{node(`f:${f}`,`b:${open.building}`,"Floor","▤",f,[plural(fs.length,"room"),...(fs.length?[seats(fs)]:empty(0))],isOpen,()=>setOpen({...open,floor:f}),isOpen&&actions("floor",{...open,floor:f}))}</div>}),!open.building?"Pick a building":!floors.length?"No floors yet":undefined)}
+   {column("Rooms",open.floor?"room":undefined,floorRooms.map(r=><div key={r.id}>{node(`r:${r.id}`,`f:${open.floor}`,"Room","▢",r.name,[`${r.department} · ${r.areaSqm??"—"} m²`],false,undefined,actions("room",open,r),<Usage occupancy={r.occupancy} capacity={r.capacity}/>)}</div>),!open.floor?"Pick a floor":!floorRooms.length?"No rooms yet":undefined)}
+  </div></div>
   {open.floor&&<p className="workflow-caption sv-tree-foot">Showing {plural(floorRooms.length,"room")} on {open.floor}, {open.building}. Each bar shows how many of the room's seats are in use right now.</p>}
+  {editing&&<SpaceEditor store={store} editing={editing} onClose={()=>setEditing(undefined)} onSaved={p=>{setEditing(undefined);setOpen(p)}}/>}
+  {deleting&&<SpaceDelete store={store} target={deleting} onClose={()=>setDeleting(undefined)} onDone={()=>{const {level,path}=deleting;setDeleting(undefined);setOpen(level==="site"?{}:level==="building"?{site:path.site}:level==="floor"?{site:path.site,building:path.building}:path)}}/>}
  </Section>;
 }
 

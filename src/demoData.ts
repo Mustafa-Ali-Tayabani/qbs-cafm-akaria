@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 export type TimelineEvent = { id: string; label: string; actor: string; at: string };
-export type Site = { id: string; name: string; city: string; status?: string };
+export type Site = { id: string; name: string; city: string; status?: string; archived?: boolean };
 export type Asset = { installDate?:string;acquisitionValue?:number;expectedLifeYears?:number;roomId?:string; id: string; tag: string; title: string; category: string; siteId: string; location: string; manufacturer: string; model: string; serial: string; warrantyUntil: string; status: string; criticality: string; lifetimeCost: number; archived?: boolean };
 export type ServiceRequest = { confirmedAt?:string; rating?:number; feedback?:string; classificationSource?:string; id: string; title: string; description: string; channel: string; requester: string; siteId: string; assetId?: string; category: string; priority: string; status: string; createdAt: string; linkedWorkOrderId?: string; dueAt?: string; archived?: boolean; timeline: TimelineEvent[] };
 export type WorkPhoto = { id:string; name:string; stage:"Before"|"After"|"Evidence"; at:string; thumb:string };
@@ -19,8 +19,10 @@ export type Contract = {id:string; title:string; contractorId:string; siteId:str
 export type PurchaseRequest = {id:string;partId:string;siteId:string;quantity:number;status:string;createdAt:string;requestedBy:string;workOrderId?:string;archived?:boolean};
 export type DemoNotification = {id:string; recordType:"requests"|"workOrders";recordId:string;message:string;createdAt:string;readAt?:string};
 export type Transfer = {id:string; assetId:string; fromSiteId:string; toSiteId:string; toLocation:string; status:string; createdAt:string; timeline:TimelineEvent[]; archived?:boolean};
+/** A building or floor registered before it has rooms (rooms otherwise define the hierarchy). */
+export type SpaceLevel = { siteId:string; building:string; floor?:string };
 export type DemoState = {
- sites:Site[]; assets:Asset[]; requests:ServiceRequest[]; workOrders:WorkOrder[]; ppmPlans:PpmPlan[]; parts:Part[]; contractors:Contractor[]; rooms:Room[];
+ spaceLevels:SpaceLevel[]; sites:Site[]; assets:Asset[]; requests:ServiceRequest[]; workOrders:WorkOrder[]; ppmPlans:PpmPlan[]; parts:Part[]; contractors:Contractor[]; rooms:Room[];
  applications:Application[]; terms:TermsVersion[]; slaRules:SlaRule[]; movements:StockMovement[]; bookings:Booking[]; transfers:Transfer[]; contracts:Contract[]; purchaseRequests:PurchaseRequest[]; notifications:DemoNotification[];
  sequences:Record<string,number>;
 };
@@ -93,7 +95,7 @@ function bookingSeed():Booking[] {
 
 export function createSeed(): DemoState {
   return {
-    sequences: {},
+    sequences: {}, spaceLevels: [],
     applications: [], movements: [], bookings: bookingSeed(), transfers: [], purchaseRequests: [], notifications: [],
     contracts: [
       {id:"CON-000014",title:"Elevator maintenance coverage",contractorId:"CTR-014",siteId:"SITE-OL",service:"Elevators",startAt:"2026-01-01",endAt:"2026-11-04",value:120000,penaltyPercent:1,tier:"Standard",status:"Active",legacyRef:"CN-2026-04"},
@@ -314,7 +316,7 @@ export function useDemoData(){
    const s=latest.current;
    const linked:string[]=[];
    if(key==="assets" && (s.workOrders.some(w=>w.assetId===id&&w.status!=="Closed")||s.ppmPlans.some(p=>p.assetId===id&&p.status==="Active")))linked.push("open work orders or PPM plans");
-   if(key==="sites" && [s.assets,s.rooms,s.parts,s.workOrders].some(records=>records.some(r=>r.siteId===id)))linked.push("site records");
+   if(key==="sites" && [s.assets,s.rooms,s.parts,s.workOrders].some(records=>records.some(r=>r.siteId===id&&!("archived" in r&&r.archived))))linked.push("site records");
    if(key==="rooms"&&s.bookings.some(b=>b.roomId===id&&b.status==="Confirmed"))linked.push("bookings");
    if(key==="parts"&&s.movements.some(m=>m.partId===id))linked.push("stock ledger entries");
    if(key==="requests"&&s.workOrders.some(w=>w.requestId===id&&w.status!=="Closed"))linked.push("open work orders");
@@ -324,6 +326,33 @@ export function useDemoData(){
    if(key==="purchaseRequests"&&s.purchaseRequests.some(pr=>pr.id===id&&pr.status==="Approved"))linked.push("approved purchase history");
    if(linked.length)return `This record has linked ${linked.join(" and ")}. Resolve links before archiving.`;
    updateRecord(key,id,{archived:true,status:"Archived"});return null;
+ }
+ const inSpace=(siteId:string,building?:string,floor?:string)=>(x:{siteId:string;building?:string;floor?:string})=>x.siteId===siteId&&(building===undefined||x.building===building)&&(floor===undefined||x.floor===floor);
+ /** Registers an empty building (floor omitted) or floor so it appears in the hierarchy before rooms exist. */
+ function addSpace(siteId:string,building:string,floor?:string){
+   const b=building.trim(),f=floor?.trim();
+   if(!b||(floor!==undefined&&!f))throw new Error("Enter a name.");
+   const s=latest.current,taken=[...s.rooms.filter(r=>!r.archived),...s.spaceLevels].some(x=>x.siteId===siteId&&x.building===b&&(f===undefined||x.floor===f));
+   if(taken)throw new Error(f?`${f} already exists in ${b}.`:`${b} already exists at this site.`);
+   mutate(st=>({...st,spaceLevels:[...st.spaceLevels,{siteId,building:b,...(f?{floor:f}:{})}]}));
+ }
+ /** Renames a building (floor omitted) or floor across every room and registered level beneath it. */
+ function renameSpace(siteId:string,building:string,floor:string|undefined,name:string){
+   const n=name.trim();if(!n)throw new Error("Enter a name.");
+   const s=latest.current,field=floor===undefined?"building":"floor";
+   if(n!==(floor??building)&&[...s.rooms.filter(r=>!r.archived),...s.spaceLevels].some(x=>x.siteId===siteId&&(floor===undefined?x.building===n:x.building===building&&x.floor===n)))throw new Error(`${n} already exists.`);
+   const match=inSpace(siteId,building,floor);
+   mutate(st=>({...st,rooms:st.rooms.map(r=>match(r)?{...r,[field]:n}:r),spaceLevels:st.spaceLevels.map(l=>match(l)&&(floor===undefined||l.floor!==undefined)?{...l,[field]:n}:l)}));
+ }
+ /** Archives every room under a site, building or floor; the site record itself too when building is omitted. Returns a reason when blocked. */
+ function archiveSpace(siteId:string,building?:string,floor?:string):string|null{
+   const s=latest.current,match=inSpace(siteId,building,floor),rooms=s.rooms.filter(r=>!r.archived&&match(r));
+   const booked=rooms.filter(r=>s.bookings.some(b=>b.roomId===r.id&&!b.archived&&b.status==="Confirmed"&&Date.parse(b.endAt)>Date.now()));
+   if(booked.length)return `Cancel upcoming bookings first: ${booked.map(r=>r.name).join(", ")}.`;
+   if(building===undefined&&[s.assets,s.parts,s.workOrders].some(records=>records.some(r=>r.siteId===siteId&&!("archived" in r&&r.archived))))return "This site still has assets, stock or work orders. Move or archive them first.";
+   const ids=new Set(rooms.map(r=>r.id));
+   mutate(st=>({...st,rooms:st.rooms.map(r=>ids.has(r.id)?{...r,archived:true}:r),spaceLevels:st.spaceLevels.filter(l=>!match(l)),sites:building===undefined?st.sites.map(x=>x.id===siteId?{...x,archived:true,status:"Archived"}:x):st.sites}));
+   return null;
  }
  function createRequest(input:Pick<ServiceRequest,"title"|"description"|"siteId"|"requester"|"channel">){
    const lower=`${input.title} ${input.description}`.toLowerCase();
@@ -440,7 +469,7 @@ export function useDemoData(){
    return ids;
  }
  function approveTransfer(id:string){const transfer=latest.current.transfers.find(x=>x.id===id);if(!transfer)throw new Error("Transfer not found");updateRecord("transfers",id,{status:"Accepted"});updateRecord("assets",transfer.assetId,{siteId:transfer.toSiteId,location:transfer.toLocation});}
- return {data,reset:()=>{const seed=createSeed();latest.current=seed;setData(seed)},createRecord,updateRecord,archiveRecord,createRequest,createWorkOrder,assignWorkOrder,setWorkOrderStatus,updateSla,issuePart,receivePart,generatePpm,saveTermsDraft,publishTerms,reviewApplication,approveTransfer,assignContractorSla,confirmRequest,rateRequest,markNotificationRead,triageRequest,createReplenishment};
+ return {data,addSpace,renameSpace,archiveSpace,reset:()=>{const seed=createSeed();latest.current=seed;setData(seed)},createRecord,updateRecord,archiveRecord,createRequest,createWorkOrder,assignWorkOrder,setWorkOrderStatus,updateSla,issuePart,receivePart,generatePpm,saveTermsDraft,publishTerms,reviewApplication,approveTransfer,assignContractorSla,confirmRequest,rateRequest,markNotificationRead,triageRequest,createReplenishment};
 }
 export type Store = ReturnType<typeof useDemoData>;
 export function responseSlaState(wo:WorkOrder){
