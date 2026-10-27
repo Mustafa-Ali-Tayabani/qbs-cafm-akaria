@@ -1,0 +1,30 @@
+/* 21 Oct BRD delta: reuse the AKARIA design system variables and existing components. */
+.brd-toolbar,.brd-hierarchy-controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:14px 0}
+.brd-toolbar label,.brd-hierarchy-controls label,.brd-response label{display:grid;gap:7px;color:var(--muted);font-size:13px;min-width:190px;flex:1}
+.brd-toolbar input,.brd-toolbar select,.brd-hierarchy-controls select,.brd-response input,.brd-response select,.brd-response textarea{width:100%;min-height:42px;padding:10px;border:1px solid var(--border);border-radius:8px;color:var(--ink);font:inherit;background:var(--surface)}
+.brd-response{border-top:1px solid var(--border);margin-top:16px;padding-top:16px;display:grid;gap:10px}
+.brd-response textarea{min-height:84px;resize:vertical}
+.brd-detail h3{margin:0 0 7px}
+.brd-kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.brd-kpi{margin-top:0;display:grid;gap:7px;min-width:0}
+.brd-kpi small,.brd-kpi span{color:var(--muted);font-size:12px}
+.brd-kpi strong{color:var(--navy);font-size:24px}
+.brd-kpi b{color:var(--blue);font-size:13px}
+.brd-kpi span{line-height:1.4}
+.brd-scope-notice{margin:12px 0;padding:12px 15px;background:var(--canvas);border:1px solid var(--border);border-radius:9px;color:var(--muted);font-size:13px}
+@media(max-width:1100px){.brd-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.brd-kpi-grid{grid-template-columns:1fr}.brd-toolbar,.brd-hierarchy-controls{display:grid}.brd-toolbar label,.brd-hierarchy-controls label{min-width:0}.brd-detail .register-title{align-items:start;flex-direction:column}}
+.brd-label-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:15px 0}
+.brd-printed-tag{min-width:0;break-inside:avoid;padding:16px;display:grid;gap:7px}
+.brd-printed-tag p,.brd-printed-tag small{margin:0;color:var(--muted);font-size:12px}
+.brd-barcode{max-width:100%;height:auto;display:block}
+.brd-tag-actions{justify-content:flex-start}
+@media print{
+ body{background:white!important;color:black!important}
+ .app aside,.app header,.app .page-head,.app .flow-tabs,.brd-print-hidden,.brd-tag-actions,.brd-label-grid~p,.brd-label-grid~.workflow-caption{display:none!important}
+ .app main{margin:0!important;width:100%!important}
+ .app main .content{padding:0!important;max-width:none!important}
+ .app .register.flow-panel{border:0!important;padding:0!important}
+ .brd-label-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8mm}
+ .brd-printed-tag{border:1px solid #aaa!important}
+}
